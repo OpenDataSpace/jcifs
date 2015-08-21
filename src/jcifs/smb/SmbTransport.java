@@ -481,6 +481,9 @@ public class SmbTransport extends Transport implements SmbConstants {
                 throw new IOException( "Invalid payload size: " + size );
             }
             int errorCode = Encdec.dec_uint32le( BUF, 9 ) & 0xFFFFFFFF;
+            byte[] dumpBuf = null;
+            int dumpLen = 0;
+            int dumpOff = 0;
             if (resp.command == ServerMessageBlock.SMB_COM_READ_ANDX &&
                         (errorCode == 0 ||
                         errorCode == 0x80000005)) { // overflow indicator normal for pipe
@@ -494,8 +497,14 @@ public class SmbTransport extends Transport implements SmbConstants {
                 if (r.byteCount > 0 && pad > 0 && pad < 4)
                     readn( in, BUF, 4 + off, pad);
 
-                if (r.dataLength > 0)
+                if (r.dataLength > 0) {
                     readn( in, r.b, r.off, r.dataLength );  /* read direct */
+                    if (log.level >= 6) {
+                        dumpBuf = r.b;
+                        dumpLen = r.dataLength;
+                        dumpOff = r.off;
+                    }
+                }
             } else {
                 readn( in, BUF, 4 + 32, size - 32 );
                 resp.decode( BUF, 4 );
@@ -515,7 +524,14 @@ public class SmbTransport extends Transport implements SmbConstants {
             if (log.level >= 4) {
                 log.println( response );
                 if (log.level >= 6) {
-                    Hexdump.hexdump( log, BUF, 4, size );
+                    if (null != dumpBuf) {
+                        // Handle special case of ReadAndXResponse payload
+                        Hexdump.hexdump( log, BUF, 4, size - dumpLen);
+                        Hexdump.hexdump( log, dumpBuf, dumpOff, dumpLen);
+                        dumpBuf = null; // release ref, just in case
+                    } else {
+                        Hexdump.hexdump( log, BUF, 4, size );
+                    }
                 }
             }
         }
